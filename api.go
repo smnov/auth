@@ -1,21 +1,61 @@
 package main
 
 import (
-	"fmt"
-	"log"
+	"encoding/json"
 	"net/http"
 )
 
-func (s *APIServer) GetRefreshTokenHandler(w http.ResponseWriter, r *http.Request) {
-	token, err := s.store.GetRefreshToken(r.Context())
+func WriteJSON(w http.ResponseWriter, status int, v ...any) error {
+	w.Header().Add("Content-Type", "application/json")
+	w.WriteHeader(status)
+	return json.NewEncoder(w).Encode(v)
+}
+
+func (s *APIServer) GetTokensHandler(w http.ResponseWriter, r *http.Request) {
 	params := r.URL.Query()
 	id := params.Get("id")
-	fmt.Println(id)
-	if err != nil {
-		log.Fatal("no refresh token in db")
+
+	if id == "" {
+		WriteJSON(w, http.StatusBadRequest, "no id provided")
+		return
 	}
-	fmt.Println(token)
+
+	refreshToken, err := NewRefreshToken()
+	if err != nil {
+		WriteJSON(w, http.StatusBadRequest, err.Error())
+		return
+
+	}
+	err = s.store.SaveRefreshToken(r.Context(), refreshToken)
+	if err != nil {
+		WriteJSON(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	accessToken, err := NewAccessToken(id)
+	if err != nil {
+		WriteJSON(w, http.StatusBadRequest)
+		return
+	}
+
+	response := TokenPair{
+		RefreshToken: refreshToken,
+		AccessToken:  accessToken,
+	}
+	WriteJSON(w, http.StatusOK, response)
+	return
 }
 
 func (s *APIServer) RefreshTokensHandler(w http.ResponseWriter, r *http.Request) {
+	refreshToken := r.Header.Get("refresh_token")
+	accessToken := r.Header.Get("access_token")
+	OldPair := TokenPair{
+		RefreshToken: refreshToken,
+		AccessToken:  accessToken,
+	}
+	newPairOfTokens, err := RefreshedTokens(OldPair)
+	if err != nil {
+		WriteJSON(w, http.StatusBadRequest, err)
+		return
+	}
+	WriteJSON(w, http.StatusOK, newPairOfTokens)
 }
