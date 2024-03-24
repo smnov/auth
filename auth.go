@@ -1,10 +1,9 @@
 package main
 
 import (
-	"crypto/rand"
 	"encoding/base64"
+	"encoding/binary"
 	"fmt"
-	"time"
 
 	"github.com/golang-jwt/jwt"
 )
@@ -19,63 +18,68 @@ type Token struct {
 	Payload string `bson:"payload"`
 }
 
-func DecodeAccessToken(tokenString string) (string, error) {
-	token, err := jwt.ParseWithClaims(tokenString, &jwt.MapClaims{}, func(token *jwt.Token) (interface{}, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
-		}
+func DecodeAccessToken(tokenString string) (string, int64, error) {
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 		return []byte(privateKey), nil
 	})
 	if err != nil {
-		return "", err
+		return "", 0, err
 	}
 
-	claims, ok := token.Claims.(*jwt.MapClaims)
-	if !ok || !token.Valid {
-		return "", fmt.Errorf("invalid token")
+	if !token.Valid {
+		return "", 0, fmt.Errorf("token is invalid")
 	}
 
-	accountID, ok := (*claims)["account_id"].(string)
+	claims, ok := token.Claims.(jwt.MapClaims)
 	if !ok {
-		return "", fmt.Errorf("account_id not found or not a string")
+		return "", 0, fmt.Errorf("invalid token claims")
 	}
 
-	return accountID, nil
+	id, ok := claims["account_id"].(string)
+	if !ok {
+		return "", 0, fmt.Errorf("account_id not found in claims")
+	}
+
+	expirationTimeFloat64, ok := claims["expires_at"].(float64)
+	if !ok {
+		return "", 0, fmt.Errorf("expires_at not found in claims")
+	}
+	expirationTime := int64(expirationTimeFloat64)
+
+	return id, expirationTime, nil
 }
 
-func DecodeRefreshToken(encodedToken string) (string, error) {
+func DecodeRefreshToken(encodedToken string) (string, int64, error) {
 	decodedToken, err := base64.StdEncoding.DecodeString(encodedToken)
 	if err != nil {
-		return "", err
+		return "", 0, err
 	}
 
 	id := string(decodedToken[:36])
-	return id, nil
+	timestampBytes := decodedToken[36:]
+	timestamp := int64(binary.BigEndian.Uint64(timestampBytes))
+
+	return id, timestamp, nil
 }
 
-func NewAccessToken(id string) (string, error) {
-	expirationTime := time.Now().Add(time.Hour)
+func NewAccessToken(id string, expiresAt int64) (string, error) {
 	accessClaims := &jwt.MapClaims{
 		"account_id": id,
-		"expires_at": expirationTime.Unix(),
+		"expires_at": expiresAt,
 	}
 	accessToken := jwt.NewWithClaims(jwt.SigningMethodHS512, accessClaims)
 
 	return accessToken.SignedString([]byte(privateKey))
 }
 
-func NewRefreshToken(id string) (string, error) {
-	tokenLength := 16
+func NewRefreshToken(id string, accessTokenExpires int64) (string, error) {
+	token := []byte(id)
 
-	token := make([]byte, tokenLength)
+	bytes := make([]byte, 8)
+	binary.BigEndian.PutUint64(bytes, uint64(accessTokenExpires))
+	tokenWithIdAndTime := append(token, bytes...)
 
-	if _, err := rand.Read(token); err != nil {
-		return "", err
-	}
-
-	combinedToken := append([]byte(id), token...)
-
-	refreshToken := base64.StdEncoding.EncodeToString(combinedToken)
+	refreshToken := base64.StdEncoding.EncodeToString(tokenWithIdAndTime)
 
 	return refreshToken, nil
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"regexp"
+	"time"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -51,11 +52,12 @@ func (s *APIServer) GetTokensHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !isValid {
-		writeJSON(w, http.StatusBadRequest, "id is not valid")
+		writeJSON(w, http.StatusBadRequest, "id is not valid uuid")
 		return
 	}
 
-	refreshToken, err := NewRefreshToken(id)
+	timeNow := time.Now().Unix()
+	refreshToken, err := NewRefreshToken(id, timeNow)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, err.Error())
 		return
@@ -70,7 +72,7 @@ func (s *APIServer) GetTokensHandler(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	accessToken, err := NewAccessToken(id)
+	accessToken, err := NewAccessToken(id, timeNow)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest)
 		return
@@ -92,17 +94,17 @@ func (s *APIServer) RefreshTokensHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	userIDFromAccessToken, err := DecodeAccessToken(accessToken)
+	userIDFromAccessToken, accessTime, err := DecodeAccessToken(accessToken)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	userIDFromRefreshToken, err := DecodeRefreshToken(refreshToken)
+	userIDFromRefreshToken, acaccessTimeFromRefresh, err := DecodeRefreshToken(refreshToken)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if userIDFromAccessToken != userIDFromRefreshToken {
+	if userIDFromAccessToken != userIDFromRefreshToken || accessTime != acaccessTimeFromRefresh {
 		writeJSON(w, http.StatusBadRequest, "tokens doesn't match")
 		return
 	}
@@ -110,12 +112,14 @@ func (s *APIServer) RefreshTokensHandler(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	newRefreshToken, err := NewRefreshToken(userIDFromAccessToken)
+
+	timeNow := time.Now().Unix()
+	newRefreshToken, err := NewRefreshToken(userIDFromAccessToken, timeNow)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	hashedToken, err := encryptToken(refreshToken)
+	hashedToken, err := encryptToken(newRefreshToken)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, err.Error())
 		return
@@ -125,7 +129,7 @@ func (s *APIServer) RefreshTokensHandler(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	newAccessToken, err := NewAccessToken(userIDFromAccessToken)
+	newAccessToken, err := NewAccessToken(userIDFromAccessToken, timeNow)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest)
 		return

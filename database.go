@@ -41,8 +41,7 @@ func (s *MongoStore) ReplaceRefreshToken(ctx context.Context, token, id string) 
 	}
 
 	t := Token{UserID: id, Payload: token}
-	filter := bson.M{"_id": id}
-	_, err = collection.ReplaceOne(ctx, filter, t)
+	_, err = collection.InsertOne(ctx, t)
 	if err != nil {
 		return err
 	}
