@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"regexp"
@@ -26,6 +27,19 @@ func validateId(id string) (bool, error) {
 	return regexp.Match("^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-4[a-fA-F0-9]{3}-[8|9|aA|bB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}$", []byte(id))
 }
 
+func validateRefreshToken(store Storage, ctx context.Context, refreshToken, userID string) error {
+	hash, err := store.GetRefreshToken(ctx, refreshToken, userID)
+	if err != nil {
+		return err
+	}
+
+	if err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(refreshToken)); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (s *APIServer) GetTokensHandler(w http.ResponseWriter, r *http.Request) {
 	params := r.URL.Query()
 	id := params.Get("id")
@@ -39,7 +53,6 @@ func (s *APIServer) GetTokensHandler(w http.ResponseWriter, r *http.Request) {
 	if !isValid {
 		writeJSON(w, http.StatusBadRequest, "id is not valid")
 		return
-
 	}
 
 	refreshToken, err := NewRefreshToken(id)
@@ -93,22 +106,34 @@ func (s *APIServer) RefreshTokensHandler(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusBadRequest, "tokens doesn't match")
 		return
 	}
-
-	hash, err := s.store.GetRefreshToken(r.Context(), refreshToken, userIDFromAccessToken)
+	if err := validateRefreshToken(s.store, r.Context(), refreshToken, userIDFromAccessToken); err != nil {
+		writeJSON(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	newRefreshToken, err := NewRefreshToken(userIDFromAccessToken)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	err = bcrypt.CompareHashAndPassword([]byte(hash), []byte(refreshToken))
+	hashedToken, err := encryptToken(refreshToken)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, err.Error())
 		return
 	}
-
-	newPairOfTokens, err := NewTokenPair(userIDFromAccessToken)
+	err = s.store.ReplaceRefreshToken(r.Context(), hashedToken, userIDFromAccessToken)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, err)
+		writeJSON(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, newPairOfTokens)
+	newAccessToken, err := NewAccessToken(userIDFromAccessToken)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest)
+		return
+	}
+
+	response := TokenPair{
+		RefreshToken: newRefreshToken,
+		AccessToken:  newAccessToken,
+	}
+	writeJSON(w, http.StatusOK, response)
 }

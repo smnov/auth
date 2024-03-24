@@ -3,17 +3,15 @@ package main
 import (
 	"crypto/rand"
 	"encoding/base64"
-	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt"
 )
 
 type TokenPair struct {
-	RefreshToken string `json:"refresh_token"`
-	AccessToken  string `json:"access_token"`
+	RefreshToken string
+	AccessToken  string
 }
 
 type Token struct {
@@ -50,13 +48,8 @@ func DecodeRefreshToken(encodedToken string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	separatorIndex := strings.Index(string(decodedToken), "lg$")
 
-	if separatorIndex == -1 {
-		return "", errors.New("random token separator not found")
-	}
-
-	id := string(decodedToken[:separatorIndex])
+	id := string(decodedToken[:36])
 	return id, nil
 }
 
@@ -85,20 +78,4 @@ func NewRefreshToken(id string) (string, error) {
 	refreshToken := base64.StdEncoding.EncodeToString(combinedToken)
 
 	return refreshToken, nil
-}
-
-func NewTokenPair(userID string) (*TokenPair, error) {
-	accessToken, err := NewAccessToken(userID)
-	if err != nil {
-		return nil, err
-	}
-	refreshToken, err := NewRefreshToken(userID)
-	if err != nil {
-		return nil, err
-	}
-	tokenPair := TokenPair{
-		AccessToken:  accessToken,
-		RefreshToken: refreshToken,
-	}
-	return &tokenPair, nil
 }
