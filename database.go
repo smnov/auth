@@ -6,46 +6,34 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
-	"golang.org/x/crypto/bcrypt"
 )
 
 type Storage interface {
-	GetRefreshToken(ctx context.Context, id, refreshTokenString string) (string, string, error)
-	SaveRefreshToken(ctx context.Context, token string) error
+	GetRefreshToken(ctx context.Context, refreshTokenString, id string) (string, error)
+	SaveRefreshToken(ctx context.Context, token, id string) error
 }
 
 type MongoStore struct {
 	db *mongo.Client
 }
 
-func (s *MongoStore) GetRefreshToken(ctx context.Context, id, refreshTokenString string) (string, string, error) {
+func (s *MongoStore) GetRefreshToken(ctx context.Context, refreshTokenString, id string) (string, error) {
 	collection := s.db.Database("auth").Collection("refresh_tokens")
 	var result struct {
-		TokenHash string `bson:"token_hash"`
+		UserID    string `bson:"_id"`
+		TokenHash string `bson:"payload"`
 	}
-	err := collection.FindOne(context.Background(), bson.M{"user_id": id}).Decode(&result)
+	err := collection.FindOne(context.Background(), bson.M{"_id": id}).Decode(&result)
 	if err != nil {
-		return "", "", err
+		return "", err
 	}
-	err = bcrypt.CompareHashAndPassword([]byte(result.TokenHash), []byte(refreshTokenString))
-	if err != nil {
-		return "", "", err
-	}
-	accessToken, err := NewAccessToken(id)
-	if err != nil {
-		return "", "", err
-	}
-	refreshToken, err := NewRefreshToken()
-	if err != nil {
-		return "", "", err
-	}
-	return accessToken, refreshToken, nil
+	return result.TokenHash, nil
 }
 
-func (s *MongoStore) SaveRefreshToken(ctx context.Context, token string) error {
+func (s *MongoStore) SaveRefreshToken(ctx context.Context, token, id string) error {
 	collection := s.db.Database("auth").Collection("refresh_tokens")
-	t := Token{refresh: token}
-	_, err := collection.InsertOne(ctx, t)
+	t := Token{UserID: id, Payload: token}
+	_, err := collection.ReplaceOne(ctx, id, t)
 	if err != nil {
 		return err
 	}

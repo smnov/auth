@@ -24,5 +24,5 @@ func (s *APIServer) Run() {
 	router.HandleFunc("/get", s.GetTokensHandler)
 	router.HandleFunc("/refresh", s.RefreshTokensHandler)
 	fmt.Println("starting server on port:", s.ListenAddr)
-	http.ListenAndServe(s.ListenAddr, router) // router is handler
+	http.ListenAndServe(s.ListenAddr, router)
 }
