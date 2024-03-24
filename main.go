@@ -15,6 +15,6 @@ func main() {
 	defer cancel()
 	mongo.db.Connect(ctx)
 	defer mongo.db.Disconnect(ctx)
-	server := NewAPIServer(":8080", mongo)
+	server := NewAPIServer(port, mongo)
 	server.Run()
 }

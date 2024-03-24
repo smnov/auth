@@ -11,16 +11,6 @@ import (
 	"github.com/golang-jwt/jwt"
 )
 
-const (
-	accessTokenMaxAge  = 10 * time.Minute
-	refreshTokenMaxAge = time.Hour * 24
-)
-
-const (
-	publicKey  = "public"
-	privateKey = "private"
-)
-
 type TokenPair struct {
 	RefreshToken string `json:"refresh_token"`
 	AccessToken  string `json:"access_token"`
